@@ -25,11 +25,23 @@ if uploaded_file:
     shift_options = sorted(df["SHIFT NAME"].dropna().unique())
     selected_shifts = st.multiselect("Select Shifts", shift_options, default=shift_options)
 
+    # Order count filter (NEW)
+    min_order = int(df["TOTAL ORDERS"].min())
+    max_order = int(df["TOTAL ORDERS"].max())
+    order_range = st.slider(
+        "Filter by Total Orders (Range)", 
+        min_value=min_order, 
+        max_value=max_order, 
+        value=(min_order, max_order)
+    )
+
     filtered_df = df[
         df["WEEK"].isin(selected_weeks) &
         df["CITY"].isin(selected_cities) &
         df["ZONE NAME"].isin(selected_zones) &
-        df["SHIFT NAME"].isin(selected_shifts)
+        df["SHIFT NAME"].isin(selected_shifts) &
+        (df["TOTAL ORDERS"] >= order_range[0]) &
+        (df["TOTAL ORDERS"] <= order_range[1])
     ].copy()
 
     st.markdown(f"**{len(filtered_df)} DEs match your filter**")
@@ -75,4 +87,3 @@ if uploaded_file:
 
 else:
     st.info("👆 Please upload a valid seed/onboarding CSV to get started!")
-
