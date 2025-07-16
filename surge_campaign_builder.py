@@ -1,107 +1,98 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Surge Campaign Builder", layout="wide")
-st.title("🚀 Surge Campaign Builder (with Planning File Upload)")
+st.set_page_config(page_title="Surge Planner by Zone", layout="wide")
+st.title("🚀 Surge Planner: Zone-wise Surge Slab Design")
 
-# --- 1. Upload Files ---
-st.markdown("### 1️⃣ Upload Planning File (Zone-Weekly) & DE Data File (DE-wise)")
-planning_file = st.file_uploader("Upload Planning File (Zone/City/Week level, CSV)", type=["csv"], key="plan_file")
-de_file = st.file_uploader("Upload DE Data File (DE/Week level, CSV)", type=["csv"], key="de_file")
+# --- Upload both files ---
+st.markdown("### 1️⃣ Upload Files")
+planning_file = st.file_uploader("Upload Planning File (zone-week summary, CSV)", type=["csv"])
+de_file = st.file_uploader("Upload DE Data File (DE-wise, CSV)", type=["csv"])
 
-planning_df = None
-de_df = None
+if not (planning_file and de_file):
+    st.info("Upload both Planning and DE Data files to begin.")
+    st.stop()
 
-if planning_file:
-    planning_df = pd.read_csv(planning_file)
-    planning_df.columns = planning_df.columns.str.strip().str.upper()
-    st.success("Planning File uploaded! Preview below 👇")
-    st.dataframe(planning_df.head(10), use_container_width=True)
-if de_file:
-    de_df = pd.read_csv(de_file)
-    de_df.columns = de_df.columns.str.strip().str.upper()
-    st.success("DE Data File uploaded! Preview below 👇")
-    st.dataframe(de_df.head(10), use_container_width=True)
+planning_df = pd.read_csv(planning_file)
+planning_df.columns = planning_df.columns.str.upper().str.strip()
+de_df = pd.read_csv(de_file)
+de_df.columns = de_df.columns.str.upper().str.strip()
 
-if planning_df is not None and de_df is not None:
-    week_col = "WEEK"
+# --- Select reference week ---
+week_options = sorted(planning_df["WEEK"].unique())
+selected_week = st.selectbox("Select the week to plan surge for:", week_options, index=len(week_options)-1)
 
-    # ---- 2. Select Weeks ----
-    week_plan_options = sorted(planning_df[week_col].unique())
-    week_de_options = sorted(de_df[week_col].unique())
+# Filter planning & DE file for selected week only
+plan_week_df = planning_df[planning_df["WEEK"] == selected_week].copy()
+de_week_df = de_df[de_df["WEEK"] == selected_week].copy()
 
-    st.markdown("### 2️⃣ Week Selection for Surge Planning")
-    week_select_method = st.radio(
-        "Choose which week's data to base your surge on:",
-        ["Planning File weeks", "DE Data weeks", "Both"],
-        index=2
-    )
+st.markdown(f"### 2️⃣ Demand stats for Week {selected_week}")
 
-    if week_select_method == "Planning File weeks":
-        selected_weeks = st.multiselect(
-            "Select Week(s) from Planning File",
-            week_plan_options,
-            default=week_plan_options[-1:]
+if "ZONE" not in plan_week_df.columns or "ZONE" not in de_week_df.columns:
+    st.error("Both files must have 'ZONE' and 'CITY' columns.")
+    st.stop()
+
+# List all zones for that week
+zones = plan_week_df["ZONE"].unique()
+zone_slab_dict = {}
+
+for zone in zones:
+    zone_stats = plan_week_df[plan_week_df["ZONE"] == zone]
+    if zone_stats.empty:
+        continue
+    city = zone_stats["CITY"].iloc[0]
+    de_list = de_week_df[(de_week_df["ZONE"] == zone) & (de_week_df["CITY"] == city)]
+    with st.expander(f"Zone: {zone} ({city}) - Click to expand"):
+        st.write("**Zone Stats:**")
+        st.dataframe(zone_stats, use_container_width=True)
+        st.write("**DEs in this Zone/Week:**")
+        st.dataframe(de_list[["DE ID", "DE NAME", "TOTAL ORDERS"]], use_container_width=True)
+        # Input for surge slabs per zone
+        slabs = st.text_input(
+            f"Enter slabs for {zone} as comma-separated order:payout (e.g. 1:25,5:50,10:100)",
+            value="1:25,5:50,10:100",
+            key=f"slab_{zone}"
         )
-    elif week_select_method == "DE Data weeks":
-        selected_weeks = st.multiselect(
-            "Select Week(s) from DE Data File",
-            week_de_options,
-            default=week_de_options[-1:]
-        )
-    else:
-        all_weeks = sorted(set(week_plan_options) | set(week_de_options))
-        selected_weeks = st.multiselect(
-            "Select Week(s) (All available in both files)",
-            all_weeks,
-            default=all_weeks[-1:]
-        )
+        # Parse into list of (order, payout)
+        try:
+            slab_pairs = [tuple(map(int, x.split(":"))) for x in slabs.split(",") if ":" in x]
+            zone_slab_dict[zone] = sorted(slab_pairs)
+        except Exception:
+            st.warning(f"Invalid slab format for {zone}. Skipping.")
 
-    # --- Safe DE week filter ---
-    safe_default_weeks = [w for w in selected_weeks if w in week_de_options]
-    if not safe_default_weeks and week_de_options:
-        safe_default_weeks = week_de_options[-1:]
+st.markdown("---")
 
-    selected_de_weeks = st.multiselect(
-        "Filter DEs by Week (for DE Data File)",
-        week_de_options,
-        default=safe_default_weeks,
-        key="de_week_select"
-    )
+# --- Compute payouts for each DE in each zone ---
+st.markdown("### 3️⃣ Payout Table Preview")
 
-    # --- Filter data as needed ---
-    filtered_de_df = de_df[de_df[week_col].isin(selected_de_weeks)].copy()
-    filtered_planning_df = planning_df[planning_df[week_col].isin(selected_weeks)].copy()
+payout_rows = []
+for zone in zones:
+    city = plan_week_df[plan_week_df["ZONE"] == zone]["CITY"].iloc[0]
+    de_list = de_week_df[(de_week_df["ZONE"] == zone) & (de_week_df["CITY"] == city)]
+    slabs = zone_slab_dict.get(zone, [])
+    for _, row in de_list.iterrows():
+        orders = row["TOTAL ORDERS"]
+        payout = 0
+        achieved = []
+        for o, amt in slabs:
+            if orders >= o:
+                payout = amt
+                achieved.append(str(o))
+        payout_rows.append({
+            "DE ID": row["DE ID"],
+            "DE NAME": row["DE NAME"],
+            "CITY": city,
+            "ZONE": zone,
+            "TOTAL ORDERS": orders,
+            "Slab_Achieved": ",".join(achieved) if achieved else "None",
+            "Payout": payout
+        })
 
-    st.markdown(f"**{len(filtered_de_df)} DE rows for selected week(s)**")
-    st.markdown(f"**{len(filtered_planning_df)} Planning rows for selected week(s)**")
-    st.dataframe(filtered_de_df.head(10))
-    st.dataframe(filtered_planning_df.head(10))
-
-    # ---- 3. Example logic: show summary stats ----
-    st.markdown("### 3️⃣ Zone-Weekly Summary (from Planning File)")
-    if not filtered_planning_df.empty:
-        zone_summary_cols = ["CITY", "ZONE", "WEEK", "DE_COUNT", "TOTAL_ORDERS"]
-        for col in zone_summary_cols:
-            if col not in filtered_planning_df.columns:
-                zone_summary_cols.remove(col)
-        st.dataframe(filtered_planning_df[zone_summary_cols], use_container_width=True)
-    else:
-        st.info("No rows in Planning file for selected week(s).")
-
-    st.markdown("### 4️⃣ DE List (from DE Data File, Filtered by Week)")
-    if not filtered_de_df.empty:
-        de_list_cols = ["DE ID", "DE NAME", "WEEK", "CITY", "ZONE", "TOTAL ORDERS"]
-        for col in de_list_cols:
-            if col not in filtered_de_df.columns:
-                de_list_cols.remove(col)
-        st.dataframe(filtered_de_df[de_list_cols], use_container_width=True)
-    else:
-        st.info("No DE data for selected week(s).")
-
-    st.markdown("---")
-    st.info("🔧 Add your surge logic and milestone payout logic below using these filtered DataFrames.")
-
-else:
-    st.warning("Please upload BOTH Planning File and DE Data file to proceed.")
-
+payout_df = pd.DataFrame(payout_rows)
+st.dataframe(payout_df, use_container_width=True)
+st.download_button(
+    "📥 Download Payout Table (CSV)",
+    payout_df.to_csv(index=False),
+    file_name=f"surge_payout_week_{selected_week}.csv",
+    mime="text/csv"
+)
