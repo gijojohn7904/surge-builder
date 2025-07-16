@@ -15,7 +15,7 @@ if uploaded_file:
     st.dataframe(df.head(20))
 
     # 2. Filter Options
-    st.markdown("### 2️⃣ Filter Your Data (Optional)")
+    st.markdown("### 2️⃣ TAM Filter ")
     week_options = sorted(df["WEEK"].unique())
     selected_weeks = st.multiselect("Select Weeks", week_options, default=week_options[-1:])
     city_options = sorted(df["CITY"].dropna().unique())
