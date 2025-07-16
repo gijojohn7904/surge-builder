@@ -1,8 +1,23 @@
 import streamlit as st
 import pandas as pd
 
+# ---- CUSTOM STYLE FOR FILTER CAPSULES (Blue) ----
+st.markdown("""
+<style>
+span[data-baseweb="tag"] {
+  background-color: #1976D2 !important;  /* Blue */
+  color: #fff !important;
+  border-radius: 14px !important;
+  font-weight: 500;
+}
+span[data-baseweb="tag"] svg {
+  fill: #fff !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.set_page_config(page_title="Surge Campaign Builder", layout="wide")
-st.title("Surge Builder")
+st.title("🚀 Surge Campaign Builder (Milestone Surges)")
 
 # 1. Upload Seed/OB File
 st.markdown("### 1️⃣ Upload Seed File")
@@ -12,12 +27,12 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
     df.columns = df.columns.str.strip().str.upper()
     st.success("Seed file uploaded! Preview below 👇")
-    st.dataframe(df.head(20))
+    st.dataframe(df.head(20), use_container_width=True)
 
     # 2. Filter Options
-    st.markdown("### 2️⃣ TAM Filter ")
+    st.markdown("### 2️⃣ TAM Filter")
     week_options = sorted(df["WEEK"].unique())
-    selected_weeks = st.multiselect("Select Weeks", week_options, default=week_options[-1:])
+    selected_weeks = st.multiselect("Select Weeks", week_options, default=week_options[-1:] if len(week_options) > 0 else [])
     city_options = sorted(df["CITY"].dropna().unique())
     selected_cities = st.multiselect("Select Cities", city_options, default=city_options)
     zone_options = sorted(df["ZONE NAME"].dropna().unique())
@@ -26,8 +41,8 @@ if uploaded_file:
     selected_shifts = st.multiselect("Select Shifts", shift_options, default=shift_options)
 
     # Order count filter (NEW)
-    min_order = int(df["TOTAL ORDERS"].min())
-    max_order = int(df["TOTAL ORDERS"].max())
+    min_order = int(df["TOTAL ORDERS"].min()) if not df.empty else 0
+    max_order = int(df["TOTAL ORDERS"].max()) if not df.empty else 0
     order_range = st.slider(
         "Filter by Total Orders (Range)", 
         min_value=min_order, 
@@ -49,10 +64,16 @@ if uploaded_file:
     # 3. Set Up Milestone Surges
     st.markdown("### 3️⃣ Define Milestone Surges")
     st.info("Set milestones (e.g. 1st, 5th, 10th order) and payout for each. Add/remove as needed.")
-    default_milestones = [{"milestone": 1, "amount": 25}, {"milestone": 5, "amount": 50}, {"milestone": 10, "amount": 100}]
-    milestones = st.session_state.get("milestones", default_milestones)
+    default_milestones = [
+        {"milestone": 1, "amount": 25}, 
+        {"milestone": 5, "amount": 50}, 
+        {"milestone": 10, "amount": 100}
+    ]
+    if "milestones" not in st.session_state:
+        st.session_state["milestones"] = default_milestones.copy()
+    milestones = st.session_state["milestones"]
 
-    col_milestone, col_amount = st.columns(2)
+    # Show each milestone as editable number fields
     for i, ms in enumerate(milestones):
         col1, col2 = st.columns([3,2])
         ms["milestone"] = col1.number_input(f"Milestone #{i+1} (Order Count)", min_value=1, step=1, value=ms["milestone"], key=f"ms{i}")
@@ -81,9 +102,17 @@ if uploaded_file:
     result["Total_Surge_Payout"] = result[payout_cols].sum(axis=1)
 
     # Final display columns
-    display_cols = ["WEEK", "DE ID", "DE NAME", "ONBOARDING DATE", "CITY", "ZONE NAME", "SHIFT NAME", "TOTAL ORDERS"] + payout_cols + ["Total_Surge_Payout"]
+    display_cols = [
+        "WEEK", "DE ID", "DE NAME", "ONBOARDING DATE", "CITY", 
+        "ZONE NAME", "SHIFT NAME", "TOTAL ORDERS"
+    ] + payout_cols + ["Total_Surge_Payout"]
     st.dataframe(result[display_cols].sort_values("Total_Surge_Payout", ascending=False), use_container_width=True)
-    st.download_button("📥 Download Surge Payout Table (CSV)", result[display_cols].to_csv(index=False), "milestone_surge_payouts.csv", mime="text/csv")
+    st.download_button(
+        "📥 Download Surge Payout Table (CSV)", 
+        result[display_cols].to_csv(index=False), 
+        "milestone_surge_payouts.csv", 
+        mime="text/csv"
+    )
 
 else:
     st.info("👆 Please upload a valid seed/onboarding CSV to get started!")
