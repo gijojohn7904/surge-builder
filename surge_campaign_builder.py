@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="Surge Campaign Builder", layout="wide")
-st.title("🚀 Surge Campaign Builder (Milestone Surges)")
+st.title("Surge Builder")
 
 # 1. Upload Seed/OB File
 st.markdown("### 1️⃣ Upload Seed File")
